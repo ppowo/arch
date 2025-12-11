@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 ################################################################################
-# Arch Linux ARM Minimal Post-Installation Script
+# Arch Linux ARM Minimal Post-Installation Script (Idempotent)
 #
 # This script performs essential post-installation setup for Arch Linux ARM
-# minimal installations.
+# minimal installations. Can be run multiple times safely - skips operations
+# that are already configured.
 #
 # Usage:
 #   Interactive: sudo ./arch-post-install.sh
@@ -12,21 +13,26 @@
 # Requirements:
 # - Run as root user
 # - Active internet connection
-# - Fresh Arch Linux installation
+# - Fresh Arch Linux installation (or already configured system)
 #
 # Actions performed:
 # 1. Configure timezone (Europe/Rome)
 # 2. Configure console keymap (us)
 # 3. Configure hostname (owo)
 # 4. Configure system locale (en_US.UTF-8)
-# 5. Set root password (same for both root and user "pun")
+# 5. Set root password if not already set (same for both root and user "pun")
 # 6. Create user "pun" with sudo access (wheel group)
-# 7. Install base-devel package group
-# 8. Install and enable NetworkManager
-# 9. Install GNOME desktop environment
-# 10. Enable GDM display manager
-# 11. Configure sudo access for wheel group
+# 7. Delete "alarm" user if it exists
+# 8. Update user "pun" comment to "pun"
+# 9. Install base-devel package group
+# 10. Install and enable NetworkManager
+# 11. Install GNOME desktop environment
+# 12. Enable GDM display manager
+# 13. Install asahi-meta-desktop
+# 14. Install firefox
+# 15. Configure sudo access for wheel group
 #
+# Idempotency: All operations check current state before making changes
 ################################################################################
 
 set -euo pipefail  # Exit on error, undefined vars, and pipe failures
@@ -142,6 +148,66 @@ check_internet() {
 }
 
 ################################################################################
+# Idempotency Helper Functions
+################################################################################
+
+# Check if a file exists and has expected content
+file_has_content() {
+    local file="$1"
+    local expected_content="$2"
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+    local current_content
+    current_content=$(<"$file")
+    if [[ "$current_content" == "$expected_content" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if a symlink points to the expected target
+symlink_is_correct() {
+    local symlink="$1"
+    local expected_target="$2"
+    if [[ ! -L "$symlink" ]]; then
+        return 1
+    fi
+    local current_target
+    current_target=$(readlink -f "$symlink")
+    local expected_target_resolved
+    expected_target_resolved=$(readlink -f "$expected_target" 2>/dev/null || echo "$expected_target")
+    if [[ "$current_target" == "$expected_target_resolved" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if a systemd service is enabled
+is_service_enabled() {
+    local service="$1"
+    systemctl is-enabled "$service" >/dev/null 2>&1
+}
+
+# Check if a systemd service is active/running
+is_service_active() {
+    local service="$1"
+    systemctl is-active "$service" >/dev/null 2>&1
+}
+
+# Check if root password is already set
+root_password_is_set() {
+    # Check if root has a password (not locked)
+    ! grep '^root:*$' /etc/shadow >/dev/null 2>&1
+}
+
+# Check if a locale is already generated
+locale_is_generated() {
+    local locale="$1"
+    localedef --list-archive 2>/dev/null | grep -q "^${locale}$"
+}
+
+################################################################################
 # Interactive Input Functions
 ################################################################################
 
@@ -187,19 +253,24 @@ prompt_password() {
 configure_timezone() {
     echo -e "${BLUE}[INFO] Configuring timezone: $TIMEZONE${NC}"
 
-    # Check if timezone file exists
+    # Check if timezone symlink is already correct
+    local expected_timezone="/usr/share/zoneinfo/$TIMEZONE"
     if [[ ! -f "/usr/share/zoneinfo/$TIMEZONE" ]]; then
         echo -e "${YELLOW}WARNING: Timezone file not found, using UTC${NC}"
-        ln -sf /usr/share/zoneinfo/UTC /etc/localtime || {
-            echo -e "${RED}ERROR: Failed to set timezone${NC}"
-            exit 1
-        }
-    else
-        ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime || {
-            echo -e "${RED}ERROR: Failed to set timezone${NC}"
-            exit 1
-        }
+        expected_timezone="/usr/share/zoneinfo/UTC"
     fi
+
+    # Check if already configured correctly
+    if symlink_is_correct "/etc/localtime" "$expected_timezone"; then
+        echo -e "${GREEN}[✓] Timezone already configured: $TIMEZONE${NC}"
+        return 0
+    fi
+
+    # Set timezone symlink
+    ln -sf "$expected_timezone" /etc/localtime || {
+        echo -e "${RED}ERROR: Failed to set timezone${NC}"
+        exit 1
+    }
 
     # Generate /etc/adjtime
     hwclock --systohc || {
@@ -212,40 +283,79 @@ configure_timezone() {
 configure_keymap() {
     echo -e "${BLUE}[INFO] Configuring console keymap: $KEYMAP${NC}"
 
-    # Set console keymap
-    loadkeys "$KEYMAP" 2>/dev/null || {
-        echo -e "${YELLOW}WARNING: Failed to load keymap '$KEYMAP', trying 'us'${NC}"
-        loadkeys us 2>/dev/null || {
-            echo -e "${YELLOW}WARNING: Could not load any keymap${NC}"
-            return 0
+    # Check if already configured correctly
+    local expected_content="KEYMAP=$KEYMAP"
+    if file_has_content "/etc/vconsole.conf" "$expected_content"; then
+        echo -e "${GREEN}[✓] Console keymap already configured: $KEYMAP${NC}"
+    else
+        # Set console keymap
+        loadkeys "$KEYMAP" 2>/dev/null || {
+            echo -e "${YELLOW}WARNING: Failed to load keymap '$KEYMAP', trying 'us'${NC}"
+            loadkeys us 2>/dev/null || {
+                echo -e "${YELLOW}WARNING: Could not load any keymap${NC}"
+                return 0
+            }
         }
-    }
 
-    # Make it persistent
-    echo "KEYMAP=$KEYMAP" > /etc/vconsole.conf || {
-        echo -e "${YELLOW}WARNING: Failed to write vconsole.conf${NC}"
-    }
+        # Make it persistent
+        echo "$expected_content" > /etc/vconsole.conf || {
+            echo -e "${YELLOW}WARNING: Failed to write vconsole.conf${NC}"
+        }
 
-    echo -e "${GREEN}[✓] Console keymap configured: $KEYMAP${NC}"
+        echo -e "${GREEN}[✓] Console keymap configured: $KEYMAP${NC}"
+    fi
 }
 
 configure_hostname() {
     echo -e "${BLUE}[INFO] Configuring hostname: $HOSTNAME${NC}"
 
+    # Check if already configured correctly
+    local expected_hostname="$HOSTNAME"
+    local expected_hosts_content
+    expected_hosts_content=$(cat <<EOF
+127.0.0.1    localhost
+::1          localhost
+127.0.1.1    $HOSTNAME.localdomain    $HOSTNAME
+EOF
+)
+
+    local hostname_needs_update=false
+    local hosts_needs_update=false
+
+    # Check hostname file
+    if ! file_has_content "/etc/hostname" "$expected_hostname"; then
+        hostname_needs_update=true
+    fi
+
+    # Check hosts file
+    if ! file_has_content "/etc/hosts" "$expected_hosts_content"; then
+        hosts_needs_update=true
+    fi
+
+    # Update files only if needed
+    if ! $hostname_needs_update && ! $hosts_needs_update; then
+        echo -e "${GREEN}[✓] Hostname already configured: $HOSTNAME${NC}"
+        return 0
+    fi
+
     # Set hostname
-    echo "$HOSTNAME" > /etc/hostname || {
-        echo -e "${RED}ERROR: Failed to set hostname${NC}"
-        exit 1
-    }
+    if $hostname_needs_update; then
+        echo "$HOSTNAME" > /etc/hostname || {
+            echo -e "${RED}ERROR: Failed to set hostname${NC}"
+            exit 1
+        }
+    fi
 
     # Update /etc/hosts
-    {
-        echo "127.0.0.1    localhost"
-        echo "::1          localhost"
-        echo "127.0.1.1    $HOSTNAME.localdomain    $HOSTNAME"
-    } > /etc/hosts || {
-        echo -e "${YELLOW}WARNING: Failed to update /etc/hosts${NC}"
-    }
+    if $hosts_needs_update; then
+        {
+            echo "127.0.0.1    localhost"
+            echo "::1          localhost"
+            echo "127.0.1.1    $HOSTNAME.localdomain    $HOSTNAME"
+        } > /etc/hosts || {
+            echo -e "${YELLOW}WARNING: Failed to update /etc/hosts${NC}"
+        }
+    fi
 
     echo -e "${GREEN}[✓] Hostname configured: $HOSTNAME${NC}"
 }
@@ -255,26 +365,53 @@ configure_locale() {
 
     # Common locales to enable
     local locales=(
-        "en_US.UTF-8 UTF-8"
-        "en_GB.UTF-8 UTF-8"
-        "it_IT.UTF-8 UTF-8"
+        "en_US.UTF-8"
+        "en_GB.UTF-8"
+        "it_IT.UTF-8"
     )
+
+    local need_locale_gen=false
+    local need_config_update=false
+
+    # Check if locales are already generated
+    for locale in "${locales[@]}"; do
+        if ! locale_is_generated "$locale"; then
+            need_locale_gen=true
+            break
+        fi
+    done
+
+    # Check if locale.conf is already set correctly
+    local expected_locale_conf="LANG=en_US.UTF-8"
+    if ! file_has_content "/etc/locale.conf" "$expected_locale_conf"; then
+        need_config_update=true
+    fi
+
+    # Skip if everything is already configured
+    if ! $need_locale_gen && ! $need_config_update; then
+        echo -e "${GREEN}[✓] System locale already configured${NC}"
+        export LANG=en_US.UTF-8
+        return 0
+    fi
 
     # Enable locales in /etc/locale.gen
     for locale in "${locales[@]}"; do
-        locale_name="${locale%% *}"
-        sed -i "s/^#$locale/$locale/" /etc/locale.gen 2>/dev/null || true
+        sed -i "s/^#${locale} UTF-8/${locale} UTF-8/" /etc/locale.gen 2>/dev/null || true
     done
 
     # Generate locales
-    locale-gen || {
-        echo -e "${YELLOW}WARNING: Failed to generate some locales${NC}"
-    }
+    if $need_locale_gen; then
+        locale-gen || {
+            echo -e "${YELLOW}WARNING: Failed to generate some locales${NC}"
+        }
+    fi
 
     # Set system-wide locale
-    echo "LANG=en_US.UTF-8" > /etc/locale.conf || {
-        echo -e "${YELLOW}WARNING: Failed to set locale.conf${NC}"
-    }
+    if $need_config_update; then
+        echo "$expected_locale_conf" > /etc/locale.conf || {
+            echo -e "${YELLOW}WARNING: Failed to set locale.conf${NC}"
+        }
+    fi
 
     # Set LC_ALL
     export LANG=en_US.UTF-8
@@ -288,6 +425,12 @@ configure_locale() {
 
 change_root_password() {
     echo -e "${BLUE}[INFO] Setting root password...${NC}"
+
+    # Check if root password is already set
+    if root_password_is_set; then
+        echo -e "${GREEN}[✓] Root password already set${NC}"
+        return 0
+    fi
 
     # Set password using chpasswd
     echo "root:$PASSWORD" | chpasswd || {
@@ -390,6 +533,38 @@ create_sudo_user() {
     echo -e "${GREEN}[✓] User '$username' created successfully with sudo access${NC}"
 }
 
+cleanup_users() {
+    echo -e "${BLUE}[INFO] Cleaning up user accounts...${NC}"
+
+    # Delete alarm user if it exists
+    if user_exists "alarm"; then
+        echo -e "${BLUE}[INFO] Deleting 'alarm' user and home directory...${NC}"
+        userdel -r alarm 2>/dev/null || {
+            echo -e "${YELLOW}WARNING: Failed to delete 'alarm' user${NC}"
+        }
+        echo -e "${GREEN}[✓] Deleted 'alarm' user${NC}"
+    else
+        echo -e "${GREEN}[✓] 'alarm' user does not exist${NC}"
+    fi
+
+    # Fix pun user comment if it exists
+    if user_exists "$NEW_USERNAME"; then
+        local current_comment
+        current_comment=$(getent passwd "$NEW_USERNAME" | cut -d: -f5)
+        if [[ "$current_comment" != "$NEW_USERNAME" ]]; then
+            echo -e "${BLUE}[INFO] Updating '$NEW_USERNAME' user comment...${NC}"
+            usermod -c "$NEW_USERNAME" "$NEW_USERNAME" || {
+                echo -e "${YELLOW}WARNING: Failed to update user comment${NC}"
+            }
+            echo -e "${GREEN}[✓] Updated '$NEW_USERNAME' user comment${NC}"
+        else
+            echo -e "${GREEN}[✓] '$NEW_USERNAME' user comment already correct${NC}"
+        fi
+    fi
+
+    echo -e "${GREEN}[✓] User cleanup complete${NC}"
+}
+
 install_base_devel() {
     echo -e "${BLUE}[INFO] Installing base-devel package group...${NC}"
 
@@ -425,20 +600,41 @@ install_networkmanager() {
         echo -e "${GREEN}[✓] NetworkManager already installed${NC}"
     fi
 
-    # Enable and start NetworkManager service
-    echo -e "${BLUE}[INFO] Enabling NetworkManager service...${NC}"
-    systemctl enable NetworkManager.service || {
-        echo -e "${RED}ERROR: Failed to enable NetworkManager${NC}"
-        exit 1
-    }
+    # Check if service is already enabled and active
+    local service_enabled=false
+    local service_active=false
 
-    echo -e "${BLUE}[INFO] Starting NetworkManager service...${NC}"
-    systemctl start NetworkManager.service || {
-        echo -e "${RED}ERROR: Failed to start NetworkManager${NC}"
-        exit 1
-    }
+    if is_service_enabled "NetworkManager.service"; then
+        service_enabled=true
+    fi
 
-    echo -e "${GREEN}[✓] NetworkManager enabled and started${NC}"
+    if is_service_active "NetworkManager.service"; then
+        service_active=true
+    fi
+
+    # Enable service only if not already enabled
+    if ! $service_enabled; then
+        echo -e "${BLUE}[INFO] Enabling NetworkManager service...${NC}"
+        systemctl enable NetworkManager.service || {
+            echo -e "${RED}ERROR: Failed to enable NetworkManager${NC}"
+            exit 1
+        }
+    else
+        echo -e "${GREEN}[✓] NetworkManager already enabled${NC}"
+    fi
+
+    # Start service only if not already active
+    if ! $service_active; then
+        echo -e "${BLUE}[INFO] Starting NetworkManager service...${NC}"
+        systemctl start NetworkManager.service || {
+            echo -e "${RED}ERROR: Failed to start NetworkManager${NC}"
+            exit 1
+        }
+    else
+        echo -e "${GREEN}[✓] NetworkManager already active${NC}"
+    fi
+
+    echo -e "${GREEN}[✓] NetworkManager setup complete${NC}"
     echo -e "${YELLOW}[NOTE] Only one network manager should run at a time${NC}"
     echo -e "${YELLOW}[NOTE] If you have other network services running, disable them${NC}"
     echo -e "${BLUE}[INFO] Use 'nmcli' to manage network connections${NC}"
@@ -468,16 +664,51 @@ install_gnome() {
 enable_gdm() {
     echo -e "${BLUE}[INFO] Configuring GDM display manager...${NC}"
 
-    # Enable GDM service
-    echo -e "${BLUE}[INFO] Enabling GDM service...${NC}"
-    systemctl enable gdm.service || {
-        echo -e "${RED}ERROR: Failed to enable GDM${NC}"
-        exit 1
-    }
+    # Check if GDM is already enabled
+    if is_service_enabled "gdm.service"; then
+        echo -e "${GREEN}[✓] GDM already enabled${NC}"
+    else
+        # Enable GDM service
+        echo -e "${BLUE}[INFO] Enabling GDM service...${NC}"
+        systemctl enable gdm.service || {
+            echo -e "${RED}ERROR: Failed to enable GDM${NC}"
+            exit 1
+        }
+        echo -e "${GREEN}[✓] GDM enabled${NC}"
+    fi
 
-    echo -e "${GREEN}[✓] GDM enabled${NC}"
     echo -e "${YELLOW}[NOTE] GDM will start automatically on boot${NC}"
     echo -e "${YELLOW}[NOTE] You can switch between GNOME and console with Ctrl+Alt+F1/F2${NC}"
+}
+
+install_asahi_meta_desktop() {
+    echo -e "${BLUE}[INFO] Installing asahi-meta-desktop...${NC}"
+
+    if pacman -Qs asahi-meta-desktop >/dev/null 2>&1; then
+        echo -e "${GREEN}[✓] asahi-meta-desktop already installed${NC}"
+    else
+        echo -e "${BLUE}[INFO] Installing asahi-meta-desktop package...${NC}"
+        pacman -S --noconfirm --needed asahi-meta-desktop || {
+            echo -e "${RED}ERROR: Failed to install asahi-meta-desktop${NC}"
+            exit 1
+        }
+        echo -e "${GREEN}[✓] asahi-meta-desktop installed successfully${NC}"
+    fi
+}
+
+install_firefox() {
+    echo -e "${BLUE}[INFO] Installing firefox...${NC}"
+
+    if pacman -Qs firefox >/dev/null 2>&1; then
+        echo -e "${GREEN}[✓] firefox already installed${NC}"
+    else
+        echo -e "${BLUE}[INFO] Installing firefox package...${NC}"
+        pacman -S --noconfirm --needed firefox || {
+            echo -e "${RED}ERROR: Failed to install firefox${NC}"
+            exit 1
+        }
+        echo -e "${GREEN}[✓] firefox installed successfully${NC}"
+    fi
 }
 
 display_system_info() {
@@ -491,12 +722,16 @@ display_system_info() {
     echo "  ✓ Keymap: $KEYMAP"
     echo "  ✓ Hostname: $HOSTNAME"
     echo "  ✓ Locale: en_US.UTF-8"
-    echo "  ✓ Root password: changed"
+    echo "  ✓ Root password: configured (if needed)"
     echo "  ✓ User created: $NEW_USERNAME (with sudo access)"
+    echo "  ✓ User cleanup: alarm user deleted (if existed)"
+    echo "  ✓ User comment: $NEW_USERNAME"
     echo "  ✓ base-devel: installed"
     echo "  ✓ NetworkManager: installed and enabled"
     echo "  ✓ GNOME: desktop environment installed"
     echo "  ✓ GDM: display manager enabled"
+    echo "  ✓ asahi-meta-desktop: installed"
+    echo "  ✓ firefox: installed"
     echo "  ✓ sudo: configured for wheel group"
     echo ""
     echo "Next Steps:"
@@ -541,10 +776,13 @@ main() {
     install_sudo
     configure_sudo_wheel
     create_sudo_user "$NEW_USERNAME" "$PASSWORD"
+    cleanup_users
     install_base_devel
     install_networkmanager
     install_gnome
     enable_gdm
+    install_asahi_meta_desktop
+    install_firefox
 
     # Display completion message
     display_system_info
