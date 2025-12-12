@@ -26,10 +26,9 @@
 # 8. Update user "pun" comment to "pun"
 # 9. Install base-devel package group
 # 10. Install and enable NetworkManager
-# 11. Install all desktop packages: GNOME, asahi-meta-desktop, firefox, zsh, starship (consolidated)
+# 11. Install all desktop packages: GNOME, asahi-meta-desktop, firefox, starship (consolidated)
 # 12. Enable GDM display manager
-# 13. Change default shell from bash to zsh for user "pun"
-# 14. Configure sudo access for wheel group
+# 13. Configure sudo access for wheel group
 #
 # Idempotency: All operations check current state before making changes
 ################################################################################
@@ -661,7 +660,7 @@ enable_gdm() {
 
 install_all_packages() {
     echo -e "${BLUE}[INFO] Installing all desktop packages and tools...${NC}"
-    echo -e "${YELLOW}[NOTE] This includes: gnome, asahi-meta-desktop, firefox, zsh, starship${NC}"
+    echo -e "${YELLOW}[NOTE] This includes: gnome, asahi-meta-desktop, firefox, starship${NC}"
     echo -e "${YELLOW}[NOTE] This may take a while...${NC}"
 
     # Check if all packages are already installed
@@ -673,7 +672,7 @@ install_all_packages() {
     fi
 
     # Check individual packages
-    for pkg in asahi-meta-desktop firefox zsh starship; do
+    for pkg in asahi-meta-desktop firefox starship; do
         if ! pacman -Qs "$pkg" >/dev/null 2>&1; then
             all_installed=false
             break
@@ -681,7 +680,7 @@ install_all_packages() {
     done
 
     if $all_installed; then
-        echo -e "${GREEN}[✓] All packages already installed (gnome, asahi-meta-desktop, firefox, zsh, starship)${NC}"
+        echo -e "${GREEN}[✓] All packages already installed (gnome, asahi-meta-desktop, firefox, starship)${NC}"
         return 0
     fi
 
@@ -694,50 +693,13 @@ install_all_packages() {
 
     # Install all packages in one command
     echo -e "${BLUE}[INFO] Installing all packages in one operation...${NC}"
-    if ! pacman -S --noconfirm --needed gnome asahi-meta-desktop firefox zsh starship; then
+    if ! pacman -S --noconfirm --needed gnome asahi-meta-desktop firefox starship; then
         echo -e "${RED}ERROR: Failed to install one or more packages${NC}"
         exit 1
     fi
 
     echo -e "${GREEN}[✓] All packages installed successfully${NC}"
-    echo -e "${BLUE}[INFO] Installed: GNOME desktop, asahi-meta-desktop, firefox, zsh shell, starship prompt${NC}"
-}
-
-change_user_shell() {
-    local username="$1"
-    local new_shell="/usr/bin/zsh"
-
-    echo -e "${BLUE}[INFO] Changing default shell for user '$username' to zsh...${NC}"
-
-    # Check if user exists
-    if ! user_exists "$username"; then
-        echo -e "${YELLOW}WARNING: User '$username' does not exist. Skipping shell change.${NC}"
-        return 0
-    fi
-
-    # Check if zsh is installed
-    if ! command -v zsh >/dev/null 2>&1; then
-        echo -e "${YELLOW}WARNING: zsh is not installed. Cannot change user shell.${NC}"
-        return 0
-    fi
-
-    # Check if user's shell is already zsh
-    local current_shell
-    current_shell=$(getent passwd "$username" | cut -d: -f7)
-    if [[ "$current_shell" == "$new_shell" ]]; then
-        echo -e "${GREEN}[✓] User '$username' already has zsh as default shell${NC}"
-        return 0
-    fi
-
-    # Change user's shell using usermod
-    echo -e "${BLUE}[INFO] Changing shell for user '$username' from $current_shell to zsh...${NC}"
-
-    if ! usermod -s "$new_shell" "$username"; then
-        echo -e "${RED}ERROR: Failed to change shell for user '$username'${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}[✓] User '$username' shell changed to zsh successfully${NC}"
+    echo -e "${BLUE}[INFO] Installed: GNOME desktop, asahi-meta-desktop, firefox, starship prompt${NC}"
 }
 
 display_system_info() {
@@ -757,11 +719,9 @@ display_system_info() {
     echo "  ✓ User comment: $NEW_USERNAME"
     echo "  ✓ base-devel: installed"
     echo "  ✓ NetworkManager: installed and enabled"
-    echo "  ✓ All desktop packages: installed (GNOME, asahi-meta-desktop, firefox, zsh, starship)"
+    echo "  ✓ All desktop packages: installed (GNOME, asahi-meta-desktop, firefox, starship)"
     echo "  ✓ GDM: display manager enabled"
-    echo "  ✓ zsh shell: installed"
     echo "  ✓ starship prompt: installed"
-    echo "  ✓ default shell: changed to zsh for $NEW_USERNAME"
     echo "  ✓ sudo: configured for wheel group"
     echo ""
     echo "Next Steps:"
@@ -811,7 +771,6 @@ main() {
     install_networkmanager
     install_all_packages
     enable_gdm
-    change_user_shell "$NEW_USERNAME"
 
     # Display completion message
     display_system_info
