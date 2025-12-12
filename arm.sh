@@ -26,7 +26,7 @@
 # 8. Update user "pun" comment to "pun"
 # 9. Install base-devel package group
 # 10. Install and enable NetworkManager
-# 11. Install all desktop packages: GNOME, asahi-meta-desktop, firefox, starship (consolidated)
+# 11. Install all desktop packages: GNOME, asahi-meta-desktop, firefox
 # 12. Enable GDM display manager
 # 13. Configure sudo access for wheel group
 #
@@ -660,7 +660,7 @@ enable_gdm() {
 
 install_all_packages() {
     echo -e "${BLUE}[INFO] Installing all desktop packages and tools...${NC}"
-    echo -e "${YELLOW}[NOTE] This includes: gnome, asahi-meta-desktop, firefox, starship${NC}"
+    echo -e "${YELLOW}[NOTE] This includes: gnome, asahi-meta-desktop, firefox${NC}"
     echo -e "${YELLOW}[NOTE] This may take a while...${NC}"
 
     # Check if all packages are already installed
@@ -672,7 +672,7 @@ install_all_packages() {
     fi
 
     # Check individual packages
-    for pkg in asahi-meta-desktop firefox starship; do
+    for pkg in asahi-meta-desktop firefox; do
         if ! pacman -Qs "$pkg" >/dev/null 2>&1; then
             all_installed=false
             break
@@ -680,7 +680,7 @@ install_all_packages() {
     done
 
     if $all_installed; then
-        echo -e "${GREEN}[✓] All packages already installed (gnome, asahi-meta-desktop, firefox, starship)${NC}"
+        echo -e "${GREEN}[✓] All packages already installed (gnome, asahi-meta-desktop, firefox)${NC}"
         return 0
     fi
 
@@ -693,13 +693,13 @@ install_all_packages() {
 
     # Install all packages in one command
     echo -e "${BLUE}[INFO] Installing all packages in one operation...${NC}"
-    if ! pacman -S --noconfirm --needed gnome asahi-meta-desktop firefox starship; then
+    if ! pacman -S --noconfirm --needed gnome asahi-meta-desktop firefox; then
         echo -e "${RED}ERROR: Failed to install one or more packages${NC}"
         exit 1
     fi
 
     echo -e "${GREEN}[✓] All packages installed successfully${NC}"
-    echo -e "${BLUE}[INFO] Installed: GNOME desktop, asahi-meta-desktop, firefox, starship prompt${NC}"
+    echo -e "${BLUE}[INFO] Installed: GNOME desktop, asahi-meta-desktop, firefox, prompt${NC}"
 }
 
 display_system_info() {
@@ -719,9 +719,8 @@ display_system_info() {
     echo "  ✓ User comment: $NEW_USERNAME"
     echo "  ✓ base-devel: installed"
     echo "  ✓ NetworkManager: installed and enabled"
-    echo "  ✓ All desktop packages: installed (GNOME, asahi-meta-desktop, firefox, starship)"
+    echo "  ✓ All desktop packages: installed (GNOME, asahi-meta-desktop, firefox)"
     echo "  ✓ GDM: display manager enabled"
-    echo "  ✓ starship prompt: installed"
     echo "  ✓ sudo: configured for wheel group"
     echo ""
     echo "Next Steps:"
