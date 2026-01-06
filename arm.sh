@@ -26,8 +26,8 @@
 # 8. Update user "pun" comment to "pun"
 # 9. Install base-devel package group
 # 10. Install and enable NetworkManager
-# 11. Install all desktop packages: GNOME, asahi-meta-desktop, firefox
-# 12. Enable GDM display manager
+# 11. Install all desktop packages: Xfce, asahi-desktop-meta, firefox
+# 12. Enable LightDM display manager
 # 13. Configure sudo access for wheel group
 #
 # Idempotency: All operations check current state before making changes
@@ -638,49 +638,49 @@ install_networkmanager() {
     echo -e "${BLUE}[INFO] Use 'nmcli' to manage network connections${NC}"
 }
 
-enable_gdm() {
-    echo -e "${BLUE}[INFO] Configuring GDM display manager...${NC}"
+enable_lightdm() {
+    echo -e "${BLUE}[INFO] Configuring LightDM display manager...${NC}"
 
-    # Check if GDM is already enabled
-    if is_service_enabled "gdm.service"; then
-        echo -e "${GREEN}[✓] GDM already enabled${NC}"
+    # Check if LightDM is already enabled
+    if is_service_enabled "lightdm.service"; then
+        echo -e "${GREEN}[✓] LightDM already enabled${NC}"
     else
-        # Enable GDM service
-        echo -e "${BLUE}[INFO] Enabling GDM service...${NC}"
-        systemctl enable gdm.service || {
-            echo -e "${RED}ERROR: Failed to enable GDM${NC}"
+        # Enable LightDM service
+        echo -e "${BLUE}[INFO] Enabling LightDM service...${NC}"
+        systemctl enable lightdm.service || {
+            echo -e "${RED}ERROR: Failed to enable LightDM${NC}"
             exit 1
         }
-        echo -e "${GREEN}[✓] GDM enabled${NC}"
+        echo -e "${GREEN}[✓] LightDM enabled${NC}"
     fi
 
-    echo -e "${YELLOW}[NOTE] GDM will start automatically on boot${NC}"
-    echo -e "${YELLOW}[NOTE] You can switch between GNOME and console with Ctrl+Alt+F1/F2${NC}"
+    echo -e "${YELLOW}[NOTE] LightDM will start automatically on boot${NC}"
+    echo -e "${YELLOW}[NOTE] Select 'Xfce Session' from the session menu at login${NC}"
 }
 
 install_all_packages() {
     echo -e "${BLUE}[INFO] Installing all desktop packages and tools...${NC}"
-    echo -e "${YELLOW}[NOTE] This includes: gnome, asahi-meta-desktop, firefox${NC}"
+    echo -e "${YELLOW}[NOTE] This includes: xfce4, lightdm, lightdm-gtk-greeter, network-manager-applet, gvfs, thunar-volman, asahi-desktop-meta, firefox${NC}"
     echo -e "${YELLOW}[NOTE] This may take a while...${NC}"
 
     # Check if all packages are already installed
     local all_installed=true
 
-    # Check gnome group
-    if ! pacman -Qg gnome >/dev/null 2>&1; then
+    # Check xfce4 group
+    if ! pacman -Qg xfce4 >/dev/null 2>&1; then
         all_installed=false
     fi
 
     # Check individual packages
-    for pkg in asahi-meta-desktop firefox; do
-        if ! pacman -Qs "$pkg" >/dev/null 2>&1; then
+    for pkg in lightdm lightdm-gtk-greeter network-manager-applet gvfs thunar-volman asahi-desktop-meta firefox; do
+        if ! pacman -Qs "^${pkg}$" >/dev/null 2>&1; then
             all_installed=false
             break
         fi
     done
 
     if $all_installed; then
-        echo -e "${GREEN}[✓] All packages already installed (gnome, asahi-meta-desktop, firefox)${NC}"
+        echo -e "${GREEN}[✓] All packages already installed (xfce4, lightdm, asahi-desktop-meta, firefox)${NC}"
         return 0
     fi
 
@@ -693,13 +693,13 @@ install_all_packages() {
 
     # Install all packages in one command
     echo -e "${BLUE}[INFO] Installing all packages in one operation...${NC}"
-    if ! pacman -S --noconfirm --needed gnome asahi-meta-desktop firefox; then
+    if ! pacman -S --noconfirm --needed xfce4 lightdm lightdm-gtk-greeter network-manager-applet gvfs thunar-volman asahi-desktop-meta firefox; then
         echo -e "${RED}ERROR: Failed to install one or more packages${NC}"
         exit 1
     fi
 
     echo -e "${GREEN}[✓] All packages installed successfully${NC}"
-    echo -e "${BLUE}[INFO] Installed: GNOME desktop, asahi-meta-desktop, firefox, prompt${NC}"
+    echo -e "${BLUE}[INFO] Installed: Xfce desktop, LightDM, gvfs, thunar-volman, asahi-desktop-meta, firefox${NC}"
 }
 
 display_system_info() {
@@ -719,8 +719,8 @@ display_system_info() {
     echo "  ✓ User comment: $NEW_USERNAME"
     echo "  ✓ base-devel: installed"
     echo "  ✓ NetworkManager: installed and enabled"
-    echo "  ✓ All desktop packages: installed (GNOME, asahi-meta-desktop, firefox)"
-    echo "  ✓ GDM: display manager enabled"
+    echo "  ✓ All desktop packages: installed (Xfce, asahi-desktop-meta, firefox)"
+    echo "  ✓ LightDM: display manager enabled"
     echo "  ✓ sudo: configured for wheel group"
     echo ""
     echo "Next Steps:"
@@ -769,7 +769,7 @@ main() {
     install_base_devel
     install_networkmanager
     install_all_packages
-    enable_gdm
+    enable_lightdm
 
     # Display completion message
     display_system_info
